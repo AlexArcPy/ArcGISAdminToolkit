@@ -1,9 +1,11 @@
 #-------------------------------------------------------------
-# Name:       ArcGIS Server Admin
-# Purpose:    This script has a number of functions to make use of the server admin API.          
-# Author:     Shaun Weston (shaun_weston@eagle.co.nz)
+# Name:       ArcGIS Server Admin Functions
+# Purpose:    Contains a number of functions to administer an ArcGIS Server site such as listing, starting and stopping services;
+#             and generating extent and usage stats.
+#             Adapted from - http://www.arcgis.com/home/item.html?id=12dde73e0e784e47818162b4d41ee340
+# Author:     Shaun Weston (shaun_weston@eagle.co.nz), Kevin Hibma (khibma@esri.com)
 # Date Created:    07/08/2013
-# Last Updated:    07/08/2013
+# Last Updated:    16/09/2014
 # Copyright:   (c) Eagle Technology
 # ArcGIS Version:   10.1+
 # Python Version:   2.7
