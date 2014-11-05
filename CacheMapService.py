@@ -1,10 +1,10 @@
 #-------------------------------------------------------------
 # Name:       Cache Map Service
-# Purpose:    Caches a map service at specified scales and reports on progress. Ability to also
-#             pause/resume caching at a specified time.
+# Purpose:    Caches a map service by either creating a new cache from scratch using a configuration file
+#             or by updating an existing cache.
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    04/11/2014
-# Last Updated:    04/11/2014
+# Last Updated:    06/11/2014
 # Copyright:   (c) Eagle Technology
 # ArcGIS Version:   10.1+
 # Python Version:   2.7
@@ -22,12 +22,13 @@ import urllib
 import urllib2
 import urlparse
 import time
+import xml.etree.ElementTree as ET
 
 # Enable data to be overwritten
 arcpy.env.overwriteOutput = True
 
 # Set variables
-enableLogging = "true" # Use logger.info("Example..."), logger.warning("Example..."), logger.error("Example...")
+enableLogging = "false" # Use logger.info("Example..."), logger.warning("Example..."), logger.error("Example...")
 logFile = os.path.join(os.path.dirname(__file__), "Logs\CacheMapService.log") # os.path.join(os.path.dirname(__file__), "Example.log")
 sendErrorEmail = "false"
 emailTo = ""
@@ -38,7 +39,7 @@ emailMessage = ""
 output = None
 
 # Start of main function
-def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInstances): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
+def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInstances,cacheConfig): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
     try:
         # Logging
         if (enableLogging == "true"):
@@ -72,6 +73,93 @@ def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInst
             # If creating a new cache
             if (updateMode.lower() == "new"):
                 arcpy.AddMessage("Creating new cache for map service - " + mapService + "...")
+
+                # Convert config file to xml
+                configFileXML = ET.parse(cacheConfig)    
+                # Import and reference the configuration file
+                root = configFileXML.getroot()
+            
+                # Get the parameters from the config
+                cacheFolder = root.find("out_folder").text
+                tileOrigin = root.find("tile_origin").text                
+                scales = root.find("scales").text
+                storageFormat = root.find("storage_format").text
+                cacheFormat = root.find("cache_format").text
+                tileCompressQuality = root.find("tile_compression_quality").text
+                dpi = root.find("dpi").text
+                tileWidth = root.find("tile_width").text
+                tileHeight = root.find("tile_height").text
+                useLocalCache = root.find("use_local_cache_dir").text
+
+                # Create the cache job, which returns a job ID      
+                jobID = createCache(serverName, serverPort, protocol, mapService, token, cacheFolder, tileOrigin, scales, storageFormat, cacheFormat, tileCompressQuality, dpi, tileWidth, tileHeight, useLocalCache)
+
+                cacheCreateRunning = True
+                while (cacheCreateRunning == True):
+                    jobStatus, messages = checkCreateCache(serverName, serverPort, protocol, token, jobID)
+
+                    # If the job is still running - esriJobSubmitted, esriJobWaiting or esriJobExecuting
+                    if ((jobStatus.lower() == "esrijobsubmitted") or (jobStatus.lower() == "esrijobwaiting") or (jobStatus.lower() == "esrijobexecuting")):
+                        # Pause every 5 seconds
+                        time.sleep(5)
+
+                    # Otherwise the job has finished - esriJobSucceeded, esriJobFailed, esriJobTimedOut, esriJobCancelling or esriJobCancelled
+                    else:
+                        # If the job has completed successfully
+                        if (jobStatus.lower() == "esrijobsucceeded"):
+                                arcpy.AddMessage("Map cache created...")
+                                # Logging
+                                if (enableLogging == "true"):   
+                                    logger.info("Map cache created...")
+
+                                # Start the cache job, which returns a job ID
+                                updateMode = "RECREATE_ALL_TILES"
+                                jobID = startCache(serverName, serverPort, protocol, mapService, token, scales, updateMode, cacheInstances)
+
+                                cacheRunning = True
+                                while (cacheRunning == True): 
+                                    jobStatus, messages = checkRunningCache(serverName, serverPort, protocol, token, jobID)
+
+                                    # If the job is still running - esriJobSubmitted, esriJobWaiting or esriJobExecuting
+                                    if ((jobStatus.lower() == "esrijobsubmitted") or (jobStatus.lower() == "esrijobwaiting") or (jobStatus.lower() == "esrijobexecuting")):
+                                        # Pause every minute
+                                        time.sleep(60)
+
+                                        # For each message returned
+                                        totalMessages = len(messages)
+                                        count = 0
+                                        for message in messages:
+                                            # If at the last two messages
+                                            if ((count == totalMessages-1) or (count == totalMessages-2)):
+                                                # If percent complete in message, log it
+                                                if "Finished" in message['description']:
+                                                    arcpy.AddMessage("Map caching - " + message['description'])
+                                                    # Logging
+                                                    if (enableLogging == "true"):   
+                                                        logger.info("Map caching - " + message['description']) 
+                                            count = count + 1
+                                    # Otherwise the job has finished - esriJobSucceeded, esriJobFailed, esriJobTimedOut, esriJobCancelling or esriJobCancelled
+                                    else:
+                                        # If the job has completed successfully
+                                        if (jobStatus.lower() == "esrijobsucceeded"):
+                                                arcpy.AddMessage("Map caching - Finished")
+                                                # Logging
+                                                if (enableLogging == "true"):   
+                                                    logger.info("Map caching - Finished")
+                                        # Caching has failed
+                                        else:
+                                            arcpy.AddError("Caching has failed, see service logs for more details...")
+                                            # Logging
+                                            if (enableLogging == "true"):      
+                                                logger.error("Caching has failed, see service logs for more details...")                             
+                                        cacheRunning = False                        
+                        # Caching has failed
+                        else:
+                            arcpy.AddError("Map cache creation has failed, see service logs for more details...")
+                            # Logging
+                            if (enableLogging == "true"):      
+                                logger.error("Map cache creation has failed, see service logs for more details...")                             
+                        cacheCreateRunning = False        
             # If updating an existing cache
             else:
                 arcpy.AddMessage("Updating cache for map service - " + mapService + "...")
@@ -90,16 +178,16 @@ def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInst
                         updateMode = "RECREATE_EMPTY_TILES"
 
                     # Start the cache job, which returns a job ID                    
-                    jobID = submitCache(serverName, serverPort, protocol, mapService, token, scales, updateMode, cacheInstances)
+                    jobID = startCache(serverName, serverPort, protocol, mapService, token, scales, updateMode, cacheInstances)
 
                     cacheRunning = True
                     while (cacheRunning == True): 
-                        jobStatus, messages = checkCache(serverName, serverPort, protocol, token, jobID)
+                        jobStatus, messages = checkRunningCache(serverName, serverPort, protocol, token, jobID)
 
                         # If the job is still running - esriJobSubmitted, esriJobWaiting or esriJobExecuting
                         if ((jobStatus.lower() == "esrijobsubmitted") or (jobStatus.lower() == "esrijobwaiting") or (jobStatus.lower() == "esrijobexecuting")):
                             # Pause every minute
-                            time.sleep(5)
+                            time.sleep(60)
 
                             # For each message returned
                             totalMessages = len(messages)
@@ -112,7 +200,7 @@ def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInst
                                         arcpy.AddMessage("Map caching - " + message['description'])
                                         # Logging
                                         if (enableLogging == "true"):   
-                                            logger.error("Map caching - " + message['description']) 
+                                            logger.info("Map caching - " + message['description']) 
                                 count = count + 1
                         # Otherwise the job has finished - esriJobSucceeded, esriJobFailed, esriJobTimedOut, esriJobCancelling or esriJobCancelled
                         else:
@@ -121,7 +209,13 @@ def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInst
                                     arcpy.AddMessage("Map caching - Finished")
                                     # Logging
                                     if (enableLogging == "true"):   
-                                        logger.error("Map caching - Finished")                                 
+                                        logger.info("Map caching - Finished")
+                            # Caching has failed
+                            else:
+                                arcpy.AddError("Caching has failed, see service logs for more details...")
+                                # Logging
+                                if (enableLogging == "true"):      
+                                    logger.error("Caching has failed, see service logs for more details...")                             
                             cacheRunning = False
                         
                 # If this is not a cached map service
@@ -247,8 +341,76 @@ def getTileInfo(serverName, serverPort, protocol, mapService, token):
 # End of get tile info function
 
 
-# Start of update cache function
-def submitCache(serverName, serverPort, protocol, mapService, token, scales, updateMode, cacheInstances):
+# Start of create cache function
+def createCache(serverName, serverPort, protocol, mapService, token, cacheFolder, tileOrigin, scales, storageFormat, cacheFormat, tileCompressQuality, dpi, tileWidth, tileHeight, useLocalCache):
+    params = urllib.urlencode({'service_url': mapService + ":MapServer",
+                               'out_folder': cacheFolder,
+                               'tile_origin': tileOrigin,
+                               'levels': scales,
+                               'storage_format': storageFormat,
+                               'cache_format': cacheFormat,
+                               'tile_compression_quality': tileCompressQuality,
+                               'dpi': dpi,
+                               'tile_width': tileWidth,
+                               'tile_height': tileHeight,
+                               'use_local_cache_dir': useLocalCache,
+                               'token': token,
+                               'f': 'json'})
+                
+    # Construct URL to start the updating of the cache
+    url = "/arcgis/rest/services/System/CachingTools/GPServer/Create Map Cache/submitJob"
+
+    # Post to the server
+    try:
+        response, data = postToServer(serverName, serverPort, protocol, url, params)
+    except:
+        arcpy.AddError("Error creating map service cache on " + serverName + ". Please check if the server is running.")
+        # Logging
+        if (enableLogging == "true"):      
+            logger.error("Error creating map service cache on " + serverName + ". Please check if the server is running.")
+            sys.exit()
+        return -1
+
+    # If there is an error
+    if (response.status != 200):
+        arcpy.AddError("Error creating map service cache.")
+        arcpy.AddError(str(data))
+        # Logging
+        if (enableLogging == "true"):     
+            logger.error("Error creating map service cache.")
+            sys.exit()
+        return -1
+    if (not assertJsonSuccess(data)):
+        arcpy.AddError("Error creating map service cache. Please check if the server is running and ensure that the username/password provided are correct.")
+        # Logging
+        if (enableLogging == "true"):      
+            logger.error("Error creating map service cache. Please check if the server is running and ensure that the username/password provided are correct.")  
+            sys.exit()
+        return -1
+    # On successful query
+    else:
+        dataObject = json.loads(data)
+        jobStatus = dataObject['jobStatus']
+        jobID = dataObject['jobId']
+
+        # If the job has been succesfully submitted 
+        if (jobStatus.lower() == "esrijobsubmitted"): 
+            return jobID
+        # If there is an error
+        else:
+            arcpy.AddError("Error creating the map service cache.")
+            arcpy.AddError(str(dataObject))
+            # Logging
+            if (enableLogging == "true"):     
+                logger.error("Error creating the map service cache.")
+                logger.error(str(dataObject))
+                sys.exit()
+            return -1               
+# End of create cache function
+
+
+# Start of start cache function
+def startCache(serverName, serverPort, protocol, mapService, token, scales, updateMode, cacheInstances):
     params = urllib.urlencode({'service_url': mapService + ":MapServer",
                                'levels': scales,
                                'thread_count': cacheInstances,
@@ -305,11 +467,56 @@ def submitCache(serverName, serverPort, protocol, mapService, token, scales, upd
                 logger.error(str(dataObject))
                 sys.exit()
             return -1               
-# End of update cache function
+# End of start cache function
 
 
-# Start of check cache function
-def checkCache(serverName, serverPort, protocol, token, jobID):
+# Start of check cache creation function
+def checkCreateCache(serverName, serverPort, protocol, token, jobID):
+    params = urllib.urlencode({'token': token,
+                               'f': 'json'})
+            
+    # Construct URL to start the updating of the cache
+    url = "/arcgis/rest/services/System/CachingTools/GPServer/Create Map Cache/jobs/" + jobID
+
+    # Post to the server
+    try:
+        response, data = postToServer(serverName, serverPort, protocol, url, params)
+    except:
+        arcpy.AddError("Error checking map service cache creation on " + serverName + ". Please check if the server is running.")
+        # Logging
+        if (enableLogging == "true"):      
+            logger.error("Error checking map service cache creation on " + serverName + ". Please check if the server is running.")
+            sys.exit()
+        return -1
+
+    # If there is an error
+    if (response.status != 200):
+        arcpy.AddError("Error checking map service cache creation.")
+        arcpy.AddError(str(data))
+        # Logging
+        if (enableLogging == "true"):     
+            logger.error("Error checking map service cache creation.")
+            sys.exit()
+        return -1
+    if (not assertJsonSuccess(data)):
+        arcpy.AddError("Error checking map service cache creation. Please check if the server is running and ensure that the username/password provided are correct.")
+        # Logging
+        if (enableLogging == "true"):      
+            logger.error("Error checking map service cache creation. Please check if the server is running and ensure that the username/password provided are correct.")  
+            sys.exit()
+        return -1
+    # On successful query
+    else:
+        dataObject = json.loads(data)
+        jobStatus = dataObject['jobStatus']
+        messages = dataObject['messages']
+        
+        return jobStatus, messages
+# End of check cache creation function
+
+
+# Start of check running cache function
+def checkRunningCache(serverName, serverPort, protocol, token, jobID):
     params = urllib.urlencode({'token': token,
                                'f': 'json'})
             
@@ -350,7 +557,7 @@ def checkCache(serverName, serverPort, protocol, token, jobID):
         messages = dataObject['messages']
         
         return jobStatus, messages
-# End of check cache function
+# End of check running cache function
 
 
 # Start of get token function

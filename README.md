@@ -9,7 +9,7 @@ Contains a number of functions to administer an ArcGIS Server site such as listi
 Will compress geodatabase, update statistics and rebuild tables indexes. 
 
 #### Cache Map Service
-Caches a map service at specified scales and reports on progress. Ability to also pause/resume caching at a specified time.
+Caches a map service by either creating a new cache from scratch using a configuration file or by updating an existing cache.
 
 #### ArcGIS Server Availability
 Checks ArcGIS server site and services and reports if site is down and/or particular service is down. This tool should be setup as an automated task on the server.
@@ -26,7 +26,6 @@ Restarts the windows service specified.
 Imports a list of users provided in a CSV file to ArcGIS server, assigning to roles and setting default password.
 
 #### Backup and Restore ArcGIS Server Site
-Backs up or restores an ArcGIS Server site. 
 * Restores an ArcGIS server site from a backup file.
 * Creates a site if no site has been created, otherwise will overwrite previous site. 
 * Restores the license.
