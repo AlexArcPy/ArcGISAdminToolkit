@@ -3,7 +3,7 @@
 # Purpose:    Checks ArcGIS server service or folder for any permission changes.     
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    03/05/2014
-# Last Updated:    18/05/2014
+# Last Updated:    07/10/2014
 # Copyright:   (c) Eagle Technology
 # ArcGIS Version:   10.1/10.2
 # Python Version:   2.7
@@ -17,13 +17,16 @@ import smtplib
 import httplib
 import json
 import urllib
+import urllib2
 import urlparse
 import arcpy
+
+# Enable data to be overwritten
 arcpy.env.overwriteOutput = True
 
-# Set variables
-logging = "false"
-logFile = r""
+# Set global variables
+enableLogging = "false" # Use logger.info("Example..."), logger.warning("Example..."), logger.error("Example...")
+logFile = "" # os.path.join(os.path.dirname(__file__), "Example.log")
 sendErrorEmail = "false"
 emailTo = ""
 emailUser = ""
@@ -35,11 +38,14 @@ output = None
 # Start of main function
 def mainFunction(agsServerSite,username,password,service,permissionExpecting): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
     try:
-        # Log start
-        if (logging == "true") or (sendErrorEmail == "true"):
-            loggingFunction(logFile,"start","")
-
-        # --------------------------------------- Start of code --------------------------------------- #        
+        # Logging
+        if (enableLogging == "true"):
+            # Setup logging
+            logger, logMessage = setLogging(logFile)
+            # Log start of process
+            logger.info("Process started.")
+            
+        # --------------------------------------- Start of code --------------------------------------- #  
 
         # Get the server site details
         protocol, serverName, serverPort, context = splitSiteURL(agsServerSite)
@@ -57,7 +63,7 @@ def mainFunction(agsServerSite,username,password,service,permissionExpecting): #
             context += 'admin/'
 
         # Get token
-        token = getToken(username, password, serverName, serverPort, protocol)
+        token = getToken(username, password, serverName, serverPort)
 
         # If token received
         if (token != -1):
@@ -73,23 +79,24 @@ def mainFunction(agsServerSite,username,password,service,permissionExpecting): #
                     # If permission expecting is applied to service
                     if (permissionExpecting == permission):
                         arcpy.AddMessage(permissionExpecting + " is applied to the service or folder...")
-                        # If logging
-                        if (logging == "true") or (sendErrorEmail == "true"):
-                            loggingFunction(logFile,"info",permissionExpecting + " is applied to the service or folder...")
+                        # Logging
+                        if (enableLogging == "true"):
+                            logger.info(permissionExpecting + " is applied to the service or folder...")
                         # Add to permissions number
                         permissionsNum = permissionsNum + 1
                 # If permission is not applied
                 if (permissionsNum == 0):
                     arcpy.AddWarning(permissionExpecting + " is not applied to the service or folder...")
-                    # If logging
-                    if (logging == "true") or (sendErrorEmail == "true"):
-                        loggingFunction(logFile,"error",permissionExpecting + " is not applied to the service or folder...")
+                    # Logging
+                    if (enableLogging == "true"):
+                        logger.error(permissionExpecting + " is not applied to the service or folder...")
                         sys.exit()                    
             else:
                 arcpy.AddWarning("No permissions set to the service or folder...")
-                # If logging
-                if (logging == "true") or (sendErrorEmail == "true"):
-                    loggingFunction(logFile,"warning","No permissions set to the service or folder...")               
+                # Logging
+                if (enableLogging == "true"):
+                    logger.warning("No permissions set to the service or folder...")
+                    
         # --------------------------------------- End of code --------------------------------------- #  
             
         # If called from gp tool return the arcpy parameter   
@@ -102,24 +109,49 @@ def mainFunction(agsServerSite,username,password,service,permissionExpecting): #
             # Return the output if there is any
             if output:
                 return output      
-        # Log end
-        if (logging == "true") or (sendErrorEmail == "true"):
-            loggingFunction(logFile,"end","")        
+        # Logging
+        if (enableLogging == "true"):
+            # Log end of process
+            logger.info("Process ended.")
+            # Remove file handler and close log file            
+            logging.FileHandler.close(logMessage)
+            logger.removeHandler(logMessage)
         pass
     # If arcpy error
-    except arcpy.ExecuteError:
-        # Show the message
-        arcpy.AddError(arcpy.GetMessages(2))        
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):
-            loggingFunction(logFile,"error",arcpy.GetMessages(2))
+    except arcpy.ExecuteError:           
+        # Build and show the error message
+        errorMessage = arcpy.GetMessages(2)   
+        arcpy.AddError(errorMessage)           
+        # Logging
+        if (enableLogging == "true"):
+            # Log error          
+            logger.error(errorMessage)                 
+            # Remove file handler and close log file
+            logging.FileHandler.close(logMessage)
+            logger.removeHandler(logMessage)
+        if (sendErrorEmail == "true"):
+            # Send email
+            sendEmail(errorMessage)
     # If python error
     except Exception as e:
-        # Show the message
-        arcpy.AddError(e.args[0])          
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error",e.args[0])
+        errorMessage = ""
+        # Build and show the error message
+        for i in range(len(e.args)):
+            if (i == 0):
+                errorMessage = unicode(e.args[i]).encode('utf-8')
+            else:
+                errorMessage = errorMessage + " " + unicode(e.args[i]).encode('utf-8')
+        arcpy.AddError(errorMessage)              
+        # Logging
+        if (enableLogging == "true"):
+            # Log error            
+            logger.error(errorMessage)               
+            # Remove file handler and close log file
+            logging.FileHandler.close(logMessage)
+            logger.removeHandler(logMessage)
+        if (sendErrorEmail == "true"):
+            # Send email
+            sendEmail(errorMessage)            
 # End of main function
 
 
@@ -135,9 +167,9 @@ def checkPermissions(serverName, serverPort, protocol, service, token):
         response, data = postToServer(serverName, serverPort, protocol, url, params)
     except:
         arcpy.AddError("Unable to connect to the ArcGIS Server site on " + serverName + ". Please check if the server is running.")
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error","Unable to connect to the ArcGIS Server site on " + serverName + ". Please check if the server is running.")
+        # Logging
+        if (enableLogging == "true"):      
+            logger.error("Unable to connect to the ArcGIS Server site on " + serverName + ". Please check if the server is running.")
             sys.exit()
         return -1
 
@@ -145,16 +177,16 @@ def checkPermissions(serverName, serverPort, protocol, service, token):
     if (response.status != 200):
         arcpy.AddError("Error getting checking permissions.")
         arcpy.AddError(str(data))
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error","Error checking permissions.")
+        # Logging
+        if (enableLogging == "true"):     
+            logger.error("Error checking permissions.")
             sys.exit()
         return -1
     if (not assertJsonSuccess(data)):
         arcpy.AddError("Error checking permissions. Please check if the server is running and ensure that the username/password provided are correct.")
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error","Error checking permissions. Please check if the server is running and ensure that the username/password provided are correct.")  
+        # Logging
+        if (enableLogging == "true"):      
+            logger.error("Error checking permissions. Please check if the server is running and ensure that the username/password provided are correct.")  
             sys.exit()
         return -1
     # On successful query
@@ -171,52 +203,38 @@ def checkPermissions(serverName, serverPort, protocol, service, token):
 
 
 # Start of get token function
-def getToken(username, password, serverName, serverPort, protocol):
-    params = urllib.urlencode({'username': username.decode(sys.stdin.encoding or sys.getdefaultencoding()).encode('utf-8'), 'password': password.decode(sys.stdin.encoding or sys.getdefaultencoding()).encode('utf-8'),'client': 'referer','referer':'backuputility','f': 'json'})
-           
-    # Construct URL to get a token
-    url = "/arcgis/tokens/generateToken"
-        
+def getToken(username, password, serverName, serverPort):
+    
+    query_dict = {'username':   username,
+                  'password':   password,
+                  'expiration': "60",
+                  'client':     'requestip'}
+    
+    query_string = urllib.urlencode(query_dict)
+    url = "http://{}:{}/arcgis/admin/generateToken?f=json".format(serverName, serverPort)
+   
     try:
-        response, data = postToServer(serverName, serverPort, protocol, url, params)
-    except:
-        arcpy.AddError("Unable to connect to the ArcGIS Server site on " + serverName + ". Please check if the server is running.")
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error","Unable to connect to the ArcGIS Server site on " + serverName + ". Please check if the server is running.")
+        token = json.loads(urllib2.urlopen(url, query_string).read())
+        if "token" not in token or token == None:
+            arcpy.AddError("Failed to get token, return message from server:")
+            arcpy.AddError(token['messages'])            
+            # Logging
+            if (enableLogging == "true"):   
+                logger.error("Failed to get token, return message from server:")
+                logger.error(token['messages'])                
             sys.exit()
-        return -1    
-    # If there is an error getting the token
-    if (response.status != 200):
-        arcpy.AddError("Error while generating the token.")
-        arcpy.AddError(str(data))
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error","Error while generating the token.")
-            sys.exit()
-        return -1
-    if (not assertJsonSuccess(data)):
-        arcpy.AddError("Error while generating the token. Please check if the server is running and ensure that the username/password provided are correct.")
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error","Error while generating the token. Please check if the server is running and ensure that the username/password provided are correct.")
-            sys.exit()
-        return -1
-    # Token returned
-    else:
-        # Extract the token from it
-        dataObject = json.loads(data)
-
-        # Return the token if available
-        if "error" in dataObject:
-            arcpy.AddError("Error retrieving token.")
-            # Log error
-            if (logging == "true") or (sendErrorEmail == "true"):       
-                loggingFunction(logFile,"error","Error retrieving token.")
-                sys.exit()
-            return -1        
         else:
-            return dataObject['token']
+            # Return the token to the function which called for it
+            return token['token']
+    
+    except urllib2.URLError, error:
+        arcpy.AddError("Could not connect to machine {} on port {}".format(serverName, serverPort))
+        arcpy.AddError(error)
+        # Logging
+        if (enableLogging == "true"):   
+            logger.error("Could not connect to machine {} on port {}".format(serverName, serverPort))
+            logger.error(error)         
+        sys.exit()
 # End of get token function
 
 
@@ -289,9 +307,9 @@ def splitSiteURL(siteURL):
         return protocol, serverName, serverPort, context  
     except:
         arcpy.AddError("The ArcGIS Server site URL should be in the format http(s)://<host>:<port>/arcgis")
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error","The ArcGIS Server site URL should be in the format http(s)://<host>:<port>/arcgis")
+        # Logging
+        if (enableLogging == "true"):      
+            logger.error("The ArcGIS Server site URL should be in the format http(s)://<host>:<port>/arcgis")
             sys.exit()
         return None, None, None, None
 # End of split URL function
@@ -305,9 +323,9 @@ def assertJsonSuccess(data):
             errMsgs = obj['messages']
             for errMsg in errMsgs:
                 arcpy.AddError(errMsg)
-                # Log error
-                if (logging == "true") or (sendErrorEmail == "true"):       
-                    loggingFunction(logFile,"error",errMsg)
+                # Logging
+                if (enableLogging == "true"):      
+                    logger.error(errMsg)
             sys.exit()
         return False
     else:
@@ -315,47 +333,42 @@ def assertJsonSuccess(data):
 # End of status check JSON object function
 
 
-# Start of logging function
-def loggingFunction(logFile,result,info):
-    #Get the time/date
-    setDateTime = datetime.datetime.now()
-    currentDateTime = setDateTime.strftime("%d/%m/%Y - %H:%M:%S")
-    # Open log file to log message and time/date
-    if (result == "start") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("---" + "\n" + "Process started at " + currentDateTime)
-    if (result == "end") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("\n" + "Process ended at " + currentDateTime + "\n")
-            f.write("---" + "\n")
-    if (result == "info") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("\n" + "Info: " + str(info))              
-    if (result == "warning") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("\n" + "Warning: " + str(info))               
-    if (result == "error") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("\n" + "Process ended at " + currentDateTime + "\n")
-            f.write("Error: " + str(info) + "\n")        
-            f.write("---" + "\n")
-    if (result == "error") and (sendErrorEmail == "true"):            
-        # Send an email
-        arcpy.AddMessage("Sending email...")
-        # Server and port information
-        smtpserver = smtplib.SMTP("smtp.gmail.com",587) 
-        smtpserver.ehlo()
-        smtpserver.starttls() 
-        smtpserver.ehlo
-        # Login with sender email address and password
-        smtpserver.login(emailUser, emailPassword)
-        # Email content
-        header = 'To:' + emailTo + '\n' + 'From: ' + emailUser + '\n' + 'Subject:' + emailSubject + '\n'
-        message = header + '\n' + emailMessage + '\n' + '\n' + info
-        # Send the email and close the connection
-        smtpserver.sendmail(emailUser, emailTo, message)
-        smtpserver.close()                
-# End of logging function    
+# Start of set logging function
+def setLogging(logFile):
+    # Create a logger
+    logger = logging.getLogger(os.path.basename(__file__))
+    logger.setLevel(logging.DEBUG)
+    # Setup log message handler
+    logMessage = logging.FileHandler(logFile)
+    # Setup the log formatting
+    logFormat = logging.Formatter("%(asctime)s: %(levelname)s - %(message)s", "%d/%m/%Y - %H:%M:%S")
+    # Add formatter to log message handler
+    logMessage.setFormatter(logFormat)
+    # Add log message handler to logger
+    logger.addHandler(logMessage) 
+
+    return logger, logMessage               
+# End of set logging function
+
+
+# Start of send email function
+def sendEmail(message):
+    # Send an email
+    arcpy.AddMessage("Sending email...")
+    # Server and port information
+    smtpServer = smtplib.SMTP("smtp.gmail.com",587) 
+    smtpServer.ehlo()
+    smtpServer.starttls() 
+    smtpServer.ehlo
+    # Login with sender email address and password
+    smtpServer.login(emailUser, emailPassword)
+    # Email content
+    header = 'To:' + emailTo + '\n' + 'From: ' + emailUser + '\n' + 'Subject:' + emailSubject + '\n'
+    body = header + '\n' + emailMessage + '\n' + '\n' + message
+    # Send the email and close the connection
+    smtpServer.sendmail(emailUser, emailTo, body)    
+# End of send email function
+
 
 # This test allows the script to be used from the operating
 # system command prompt (stand-alone), in a Python IDE, 
