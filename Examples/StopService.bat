@@ -1,2 +1,8 @@
 REM --- Stop a service ---
-"C:\PYTHON27\ArcGIS10.2\python.exe" "C:\Data\Development\Esri Projects\ArcGIS Admin Toolkit\ArcGISServerAdmin.py" LOCALHOST 6080 administrator Spl1ceGroup stop SampleWorldCities.MapServer
+C:\Python27\ArcGIS10.2\python "C:\Development\Projects\ArcGIS Admin Toolkit\StartStopServices.py" ^
+ "http://laptop-sfw.etgnz.eagle.co.nz:6080/arcgis" ^
+ "siteadmin" ^
+ "adm1n" ^
+ "Stop" ^
+ "false" ^
+ "OSMAmenity_Wellington.MapServer"

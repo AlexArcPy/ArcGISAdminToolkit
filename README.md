@@ -34,6 +34,9 @@ Imports a list of users provided in a CSV file to ArcGIS server, assigning to ro
 * Does not include map caches
 * Need to have ArcGIS for Server and ArcGIS web adaptor for IIS installed (if wanting to restore web adaptor).
 
+#### Start or Stop GIS Services
+Starts or stops GIS services. Can start/stop all GIS services for an ArcGIS server site or just the ones that are specified.
+
 
 ## Features
 
