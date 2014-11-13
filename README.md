@@ -5,9 +5,6 @@ The ArcGIS admin toolkit contains a number of tools and scripts to administer Ar
 #### ArcGIS Server Admin Functions
 Contains a number of functions to administer an ArcGIS Server site such as listing, starting and stopping services; and generating extent and usage stats. Adapted from - http://www.arcgis.com/home/item.html?id=12dde73e0e784e47818162b4d41ee340
 
-#### Geodatabase - Update & Compress
-Will compress geodatabase, update statistics and rebuild tables indexes. 
-
 #### Cache Map Service
 Caches a map service by either creating a new cache from scratch using a configuration file or by updating an existing cache.
 
