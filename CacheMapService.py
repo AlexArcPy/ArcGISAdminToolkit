@@ -4,7 +4,7 @@
 #             or by updating an existing cache.
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    04/11/2014
-# Last Updated:    06/11/2014
+# Last Updated:    17/11/2014
 # Copyright:   (c) Eagle Technology
 # ArcGIS Version:   10.1+
 # Python Version:   2.7
@@ -28,7 +28,7 @@ import xml.etree.ElementTree as ET
 arcpy.env.overwriteOutput = True
 
 # Set variables
-enableLogging = "false" # Use logger.info("Example..."), logger.warning("Example..."), logger.error("Example...")
+enableLogging = "true" # Use logger.info("Example..."), logger.warning("Example..."), logger.error("Example...")
 logFile = os.path.join(os.path.dirname(__file__), "Logs\CacheMapService.log") # os.path.join(os.path.dirname(__file__), "Example.log")
 sendErrorEmail = "false"
 emailTo = ""
@@ -37,19 +37,11 @@ emailPassword = ""
 emailSubject = ""
 emailMessage = ""
 output = None
-
+        
 # Start of main function
-def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInstances,cacheConfig): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
-    try:
-        # Logging
-        if (enableLogging == "true"):
-            # Setup logging
-            logger, logMessage = setLogging(logFile)
-            # Log start of process
-            logger.info("Process started.")
-            
-        # --------------------------------------- Start of code --------------------------------------- #
-
+def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInstances,cacheConfig): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)         
+    try:       
+        # --------------------------------------- Start of code --------------------------------------- #     
         # Get the server site details
         protocol, serverName, serverPort, context = splitSiteURL(agsServerSite)
 
@@ -247,14 +239,16 @@ def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInst
             logger.removeHandler(logMessage)
         pass
     # If arcpy error
-    except arcpy.ExecuteError:           
+    except arcpy.ExecuteError:  
         # Build and show the error message
         errorMessage = arcpy.GetMessages(2)   
         arcpy.AddError(errorMessage)           
         # Logging
         if (enableLogging == "true"):
             # Log error          
-            logger.error(errorMessage)                 
+            logger.error(errorMessage)
+            # Log end of process
+            logger.info("Process ended.")            
             # Remove file handler and close log file
             logging.FileHandler.close(logMessage)
             logger.removeHandler(logMessage)
@@ -272,9 +266,11 @@ def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInst
                 errorMessage = errorMessage + " " + unicode(e.args[i]).encode('utf-8')
         arcpy.AddError(errorMessage)              
         # Logging
-        if (enableLogging == "true"):
+        if (enableLogging == "true"):          
             # Log error            
-            logger.error(errorMessage)               
+            logger.error(errorMessage)
+            # Log end of process
+            logger.info("Process ended.")            
             # Remove file handler and close log file
             logging.FileHandler.close(logMessage)
             logger.removeHandler(logMessage)
@@ -471,7 +467,7 @@ def startCache(serverName, serverPort, protocol, mapService, token, scales, upda
 
 
 # Start of check cache creation function
-def checkCreateCache(serverName, serverPort, protocol, token, jobID):
+def checkCreateCache(serverName, serverPort, protocol, token, jobID): 
     params = urllib.urlencode({'token': token,
                                'f': 'json'})
             
@@ -562,7 +558,6 @@ def checkRunningCache(serverName, serverPort, protocol, token, jobID):
 
 # Start of get token function
 def getToken(username, password, serverName, serverPort):
-    
     query_dict = {'username':   username,
                   'password':   password,
                   'expiration': "60",
@@ -631,7 +626,7 @@ def postToServer(serverName, serverPort, protocol, url, params):
 
 
 # Start of split URL function 
-def splitSiteURL(siteURL):
+def splitSiteURL(siteURL):     
     try:
         serverName = ''
         serverPort = -1
@@ -736,4 +731,10 @@ if __name__ == '__main__':
     # Arguments are optional - If running from ArcGIS Desktop tool, parameters will be loaded into *argv
     argv = tuple(arcpy.GetParameterAsText(i)
         for i in range(arcpy.GetArgumentCount()))
+    # Logging
+    if (enableLogging == "true"):
+        # Setup logging
+        logger, logMessage = setLogging(logFile)
+        # Log start of process
+        logger.info("Process started.")    
     mainFunction(*argv)
