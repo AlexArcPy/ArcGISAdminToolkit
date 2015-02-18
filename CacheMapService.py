@@ -4,7 +4,7 @@
 #             or by updating an existing cache.
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    04/11/2014
-# Last Updated:    17/11/2014
+# Last Updated:    18/02/2015
 # Copyright:   (c) Eagle Technology
 # ArcGIS Version:   10.1+
 # Python Version:   2.7
@@ -28,7 +28,7 @@ import xml.etree.ElementTree as ET
 arcpy.env.overwriteOutput = True
 
 # Set variables
-enableLogging = "true" # Use logger.info("Example..."), logger.warning("Example..."), logger.error("Example...")
+enableLogging = "false" # Use logger.info("Example..."), logger.warning("Example..."), logger.error("Example...")
 logFile = os.path.join(os.path.dirname(__file__), "Logs\CacheMapService.log") # os.path.join(os.path.dirname(__file__), "Example.log")
 sendErrorEmail = "false"
 emailTo = ""
@@ -86,72 +86,24 @@ def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInst
                 # Create the cache job, which returns a job ID      
                 jobID = createCache(serverName, serverPort, protocol, mapService, token, cacheFolder, tileOrigin, scales, storageFormat, cacheFormat, tileCompressQuality, dpi, tileWidth, tileHeight, useLocalCache)
 
-                cacheCreateRunning = True
-                while (cacheCreateRunning == True):
-                    jobStatus, messages = checkCreateCache(serverName, serverPort, protocol, token, jobID)
+                # Check job status of cache
+                jobStatus, messages = checkRunningCache(serverName, serverPort, protocol, token, jobID)
 
-                    # If the job is still running - esriJobSubmitted, esriJobWaiting or esriJobExecuting
-                    if ((jobStatus.lower() == "esrijobsubmitted") or (jobStatus.lower() == "esrijobwaiting") or (jobStatus.lower() == "esrijobexecuting")):
-                        # Pause every 5 seconds
-                        time.sleep(5)
-
-                    # Otherwise the job has finished - esriJobSucceeded, esriJobFailed, esriJobTimedOut, esriJobCancelling or esriJobCancelled
-                    else:
-                        # If the job has completed successfully
-                        if (jobStatus.lower() == "esrijobsucceeded"):
-                                arcpy.AddMessage("Map cache created...")
-                                # Logging
-                                if (enableLogging == "true"):   
-                                    logger.info("Map cache created...")
-
-                                # Start the cache job, which returns a job ID
-                                updateMode = "RECREATE_ALL_TILES"
-                                jobID = startCache(serverName, serverPort, protocol, mapService, token, scales, updateMode, cacheInstances)
-
-                                cacheRunning = True
-                                while (cacheRunning == True): 
-                                    jobStatus, messages = checkRunningCache(serverName, serverPort, protocol, token, jobID)
-
-                                    # If the job is still running - esriJobSubmitted, esriJobWaiting or esriJobExecuting
-                                    if ((jobStatus.lower() == "esrijobsubmitted") or (jobStatus.lower() == "esrijobwaiting") or (jobStatus.lower() == "esrijobexecuting")):
-                                        # Pause every minute
-                                        time.sleep(60)
-
-                                        # For each message returned
-                                        totalMessages = len(messages)
-                                        count = 0
-                                        for message in messages:
-                                            # If at the last two messages
-                                            if ((count == totalMessages-1) or (count == totalMessages-2)):
-                                                # If percent complete in message, log it
-                                                if "Finished" in message['description']:
-                                                    arcpy.AddMessage("Map caching - " + message['description'])
-                                                    # Logging
-                                                    if (enableLogging == "true"):   
-                                                        logger.info("Map caching - " + message['description']) 
-                                            count = count + 1
-                                    # Otherwise the job has finished - esriJobSucceeded, esriJobFailed, esriJobTimedOut, esriJobCancelling or esriJobCancelled
-                                    else:
-                                        # If the job has completed successfully
-                                        if (jobStatus.lower() == "esrijobsucceeded"):
-                                                arcpy.AddMessage("Map caching - Finished")
-                                                # Logging
-                                                if (enableLogging == "true"):   
-                                                    logger.info("Map caching - Finished")
-                                        # Caching has failed
-                                        else:
-                                            arcpy.AddError("Caching has failed, see service logs for more details...")
-                                            # Logging
-                                            if (enableLogging == "true"):      
-                                                logger.error("Caching has failed, see service logs for more details...")                             
-                                        cacheRunning = False                        
-                        # Caching has failed
-                        else:
-                            arcpy.AddError("Map cache creation has failed, see service logs for more details...")
-                            # Logging
-                            if (enableLogging == "true"):      
-                                logger.error("Map cache creation has failed, see service logs for more details...")                             
-                        cacheCreateRunning = False        
+                # If the job has successfully started
+                if  ((jobStatus.lower() == "esrijobsubmitted") or (jobStatus.lower() == "esrijobwaiting") or (jobStatus.lower() == "esrijobexecuting") or (jobStatus.lower() == "esrijobsucceeded")):
+                        arcpy.AddMessage("Map caching - Started...")
+                        arcpy.AddMessage("Check Cache Status from ArcGIS Server Manager for an update on progress...")                            
+                        # Logging
+                        if (enableLogging == "true"):   
+                            logger.info("Map caching - Started...")
+                            logger.info("Check Cache Status from ArcGIS Server Manager for an update on progress...") 
+                # Caching has failed
+                else:
+                    arcpy.AddError("Caching has failed, see service logs for more details...")
+                    # Logging
+                    if (enableLogging == "true"):      
+                        logger.error("Caching has failed, see service logs for more details...")
+     
             # If updating an existing cache
             else:
                 arcpy.AddMessage("Updating cache for map service - " + mapService + "...")
@@ -172,43 +124,23 @@ def mainFunction(agsServerSite,username,password,mapService,updateMode,cacheInst
                     # Start the cache job, which returns a job ID                    
                     jobID = startCache(serverName, serverPort, protocol, mapService, token, scales, updateMode, cacheInstances)
 
-                    cacheRunning = True
-                    while (cacheRunning == True): 
-                        jobStatus, messages = checkRunningCache(serverName, serverPort, protocol, token, jobID)
+                    # Check job status of cache
+                    jobStatus, messages = checkRunningCache(serverName, serverPort, protocol, token, jobID)
 
-                        # If the job is still running - esriJobSubmitted, esriJobWaiting or esriJobExecuting
-                        if ((jobStatus.lower() == "esrijobsubmitted") or (jobStatus.lower() == "esrijobwaiting") or (jobStatus.lower() == "esrijobexecuting")):
-                            # Pause every minute
-                            time.sleep(60)
-
-                            # For each message returned
-                            totalMessages = len(messages)
-                            count = 0
-                            for message in messages:
-                                # If at the last two messages
-                                if ((count == totalMessages-1) or (count == totalMessages-2)):
-                                    # If percent complete in message, log it
-                                    if "Finished" in message['description']:
-                                        arcpy.AddMessage("Map caching - " + message['description'])
-                                        # Logging
-                                        if (enableLogging == "true"):   
-                                            logger.info("Map caching - " + message['description']) 
-                                count = count + 1
-                        # Otherwise the job has finished - esriJobSucceeded, esriJobFailed, esriJobTimedOut, esriJobCancelling or esriJobCancelled
-                        else:
-                            # If the job has completed successfully
-                            if (jobStatus.lower() == "esrijobsucceeded"):
-                                    arcpy.AddMessage("Map caching - Finished")
-                                    # Logging
-                                    if (enableLogging == "true"):   
-                                        logger.info("Map caching - Finished")
-                            # Caching has failed
-                            else:
-                                arcpy.AddError("Caching has failed, see service logs for more details...")
-                                # Logging
-                                if (enableLogging == "true"):      
-                                    logger.error("Caching has failed, see service logs for more details...")                             
-                            cacheRunning = False
+                    # If the job has successfully started
+                    if  ((jobStatus.lower() == "esrijobsubmitted") or (jobStatus.lower() == "esrijobwaiting") or (jobStatus.lower() == "esrijobexecuting") or (jobStatus.lower() == "esrijobsucceeded")):
+                            arcpy.AddMessage("Map caching - Started...")
+                            arcpy.AddMessage("Check Cache Status from ArcGIS Server Manager for an update on progress...")                            
+                            # Logging
+                            if (enableLogging == "true"):   
+                                logger.info("Map caching - Started...")
+                                logger.info("Check Cache Status from ArcGIS Server Manager for an update on progress...") 
+                    # Caching has failed
+                    else:
+                        arcpy.AddError("Caching has failed, see service logs for more details...")
+                        # Logging
+                        if (enableLogging == "true"):      
+                            logger.error("Caching has failed, see service logs for more details...")                             
                         
                 # If this is not a cached map service
                 else:
