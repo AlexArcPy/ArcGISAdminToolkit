@@ -4,13 +4,13 @@
 #             service is down. This tool should be setup as an automated task on the server.       
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    07/02/2014
-# Last Updated:    09/02/2014
+# Last Updated:    12/06/2015
 # Copyright:   (c) Eagle Technology
-# ArcGIS Version:   10.1/10.2
+# ArcGIS Version:   10.1+
 # Python Version:   2.7
 #--------------------------------
 
-# Import modules and enable data to be overwritten
+# Import modules
 import os
 import sys
 import datetime
@@ -20,10 +20,12 @@ import json
 import urllib
 import urlparse
 import arcpy
+
+# Enable data to be overwritten
 arcpy.env.overwriteOutput = True
 
 # Set variables
-logging = "false"
+enableLogging = "false"
 logFile = r""
 sendErrorEmail = "false"
 emailTo = ""
@@ -31,15 +33,14 @@ emailUser = ""
 emailPassword = ""
 emailSubject = ""
 emailMessage = ""
+enableProxy = "false"
+requestProtocol = "http" # http or https
+proxyURL = ""
 output = None
 
 # Start of main function
 def mainFunction(agsServerSite,username,password,service): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
     try:
-        # Log start
-        if (logging == "true") or (sendErrorEmail == "true"):
-            loggingFunction(logFile,"start","")
-
         # --------------------------------------- Start of code --------------------------------------- #        
 
         # Get the server site details
@@ -69,7 +70,10 @@ def mainFunction(agsServerSite,username,password,service): # Get parameters from
             if (len(str(service)) > 0): 
                 # Query the service status
                 realtimeStatus = getServiceStatus(serverName, serverPort, protocol, service, token)
-                serviceDetails = {'status': realtimeStatus, 'service': service}
+                # Check the service
+                serviceInfo = checkService(serverName, serverPort, protocol, service, token)
+                
+                serviceDetails = {'status': realtimeStatus, 'info': serviceInfo, 'service': service}
                 servicesStatus.append(serviceDetails)
             # Else
             else:
@@ -79,29 +83,46 @@ def mainFunction(agsServerSite,username,password,service): # Get parameters from
                 # Iterate through services
                 for eachService in services:
                     # Query the service status
-                    realtimeStatus = getServiceStatus(serverName, serverPort, protocol, eachService, token)
-                    serviceDetails = {'status': realtimeStatus, 'service': eachService}
-                    servicesStatus.append(serviceDetails)
+                    realtimeStatus = getServiceStatus(serverName, serverPort, protocol, eachService, token)          
+                    # Check the service
+                    serviceInfo = checkService(serverName, serverPort, protocol, eachService, token)
 
+                    serviceDetails = {'status': realtimeStatus, 'info': serviceInfo, 'service': eachService}
+                    servicesStatus.append(serviceDetails)
+                    
             stoppedServices = 0
+            errorServices = 0
+            errors = []
             # Iterate through services
             for eachServicesStatus in servicesStatus:
-                # If status is stopped at to counter
+                # If status is stopped add to stopped counter
                 if (eachServicesStatus['status'] == "STOPPED"):
                     stoppedServices = stoppedServices + 1
-
-            # If any services are stopped
-            if (stoppedServices > 0):
+                else:
+                    # If error with service add to error counter
+                    if 'error' in eachServicesStatus['info']:
+                        errorServices = errorServices + 1
+                        errors.append(eachServicesStatus['info']['error']['message'])
+                    
+            # If any services are stopped/have errors
+            if (stoppedServices > 0) or (errorServices > 0):
                 arcpy.AddError(str(stoppedServices) + " services are stopped...")
-                # If logging
-                if (logging == "true") or (sendErrorEmail == "true"):
-                    loggingFunction(logFile,"error",str(stoppedServices) + " services are stopped")
+                arcpy.AddError(str(errorServices) + " services have errors...")
+                for error in errors:
+                    arcpy.AddError(error)
+                # Logging
+                if (enableLogging == "true"):
+                    logger.error(str(stoppedServices) + " services are stopped")
+                    logger.error(str(errorServices) + " services have errors")
+                    for error in errors:
+                        logger.error(error)
                     sys.exit()
             else:
-                arcpy.AddMessage("All services are running...")
-                # If logging
-                if (logging == "true") or (sendErrorEmail == "true"):
-                    loggingFunction(logFile,"info","All services are running...")            
+                arcpy.AddMessage("All services are running correctly...")
+                # Logging
+                if (enableLogging == "true"):
+                    logger.info("All services are running correctly...")            
+
         # --------------------------------------- End of code --------------------------------------- #  
             
         # If called from gp tool return the arcpy parameter   
@@ -114,24 +135,53 @@ def mainFunction(agsServerSite,username,password,service): # Get parameters from
             # Return the output if there is any
             if output:
                 return output      
-        # Log end
-        if (logging == "true") or (sendErrorEmail == "true"):
-            loggingFunction(logFile,"end","")        
+        # Logging
+        if (enableLogging == "true"):
+            # Log end of process
+            logger.info("Process ended.")
+            # Remove file handler and close log file            
+            logging.FileHandler.close(logMessage)
+            logger.removeHandler(logMessage)
         pass
     # If arcpy error
-    except arcpy.ExecuteError:
-        # Show the message
-        arcpy.AddError(arcpy.GetMessages(2))        
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):
-            loggingFunction(logFile,"error",arcpy.GetMessages(2))
+    except arcpy.ExecuteError:           
+        # Build and show the error message
+        errorMessage = arcpy.GetMessages(2)   
+        arcpy.AddError(errorMessage)           
+        # Logging
+        if (enableLogging == "true"):
+            # Log error          
+            logger.error(errorMessage)
+            # Log end of process
+            logger.info("Process ended.")            
+            # Remove file handler and close log file
+            logging.FileHandler.close(logMessage)
+            logger.removeHandler(logMessage)
+        if (sendErrorEmail == "true"):
+            # Send email
+            sendEmail(errorMessage)
     # If python error
     except Exception as e:
-        # Show the message
-        arcpy.AddError(e.args[0])          
-        # Log error
-        if (logging == "true") or (sendErrorEmail == "true"):       
-            loggingFunction(logFile,"error",e.args[0])
+        errorMessage = ""
+        # Build and show the error message
+        for i in range(len(e.args)):
+            if (i == 0):
+                errorMessage = unicode(e.args[i]).encode('utf-8')
+            else:
+                errorMessage = errorMessage + " " + unicode(e.args[i]).encode('utf-8')
+        arcpy.AddError(errorMessage)              
+        # Logging
+        if (enableLogging == "true"):
+            # Log error            
+            logger.error(errorMessage)
+            # Log end of process
+            logger.info("Process ended.")            
+            # Remove file handler and close log file
+            logging.FileHandler.close(logMessage)
+            logger.removeHandler(logMessage)
+        if (sendErrorEmail == "true"):
+            # Send email
+            sendEmail(errorMessage)            
 # End of main function
 
 
@@ -265,6 +315,49 @@ def getServiceStatus(serverName, serverPort, protocol, service, token):
         # Return the real time state
         return dataObject['realTimeState']
 # End of get service status function
+
+
+# Start of check service function
+def checkService(serverName, serverPort, protocol, service, token):
+    params = urllib.urlencode({'token': token, 'f': 'json'})
+
+    # Construct URL to get the service status
+    url = "/arcgis/rest/services/" + service.replace(".", "/")
+
+    # Post to the server
+    try:
+        response, data = postToServer(serverName, serverPort, protocol, url, params)
+    except:
+        arcpy.AddError("Unable to connect to the ArcGIS Server site on " + serverName + ". Please check if the server is running.")
+        # Log error
+        if (logging == "true") or (sendErrorEmail == "true"):       
+            loggingFunction(logFile,"error","Unable to connect to the ArcGIS Server site on " + serverName + ". Please check if the server is running.")
+            sys.exit()
+        return -1
+
+    # If there is an error
+    if (response.status != 200):
+        arcpy.AddError("Error getting service status.")
+        # Log error
+        if (logging == "true") or (sendErrorEmail == "true"):       
+            loggingFunction(logFile,"error","Error getting service status.")
+            sys.exit()
+        arcpy.AddError(str(data))
+        return -1
+    if (not assertJsonSuccess(data)):
+        arcpy.AddError("Error getting service status. Please check if the server is running and ensure that the username/password provided are correct.")
+        # Log error
+        if (logging == "true") or (sendErrorEmail == "true"):       
+            loggingFunction(logFile,"error","Error getting service status. Please check if the server is running and ensure that the username/password provided are correct.")
+            sys.exit()
+        return -1
+    # On successful query
+    else:    
+        dataObject = json.loads(data)
+        
+        # Return the service object
+        return dataObject
+# End of check service function
 
 
 # Start of get token function
@@ -412,47 +505,42 @@ def assertJsonSuccess(data):
 # End of status check JSON object function
 
 
-# Start of logging function
-def loggingFunction(logFile,result,info):
-    #Get the time/date
-    setDateTime = datetime.datetime.now()
-    currentDateTime = setDateTime.strftime("%d/%m/%Y - %H:%M:%S")
-    # Open log file to log message and time/date
-    if (result == "start") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("---" + "\n" + "Process started at " + currentDateTime)
-    if (result == "end") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("\n" + "Process ended at " + currentDateTime + "\n")
-            f.write("---" + "\n")
-    if (result == "info") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("\n" + "Info: " + str(info))              
-    if (result == "warning") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("\n" + "Warning: " + str(info))               
-    if (result == "error") and (logging == "true"):
-        with open(logFile, "a") as f:
-            f.write("\n" + "Process ended at " + currentDateTime + "\n")
-            f.write("Error: " + str(info) + "\n")        
-            f.write("---" + "\n")
-    if (result == "error") and (sendErrorEmail == "true"):            
-        # Send an email
-        arcpy.AddMessage("Sending email...")
-        # Server and port information
-        smtpserver = smtplib.SMTP("smtp.gmail.com",587) 
-        smtpserver.ehlo()
-        smtpserver.starttls() 
-        smtpserver.ehlo
-        # Login with sender email address and password
-        smtpserver.login(emailUser, emailPassword)
-        # Email content
-        header = 'To:' + emailTo + '\n' + 'From: ' + emailUser + '\n' + 'Subject:' + emailSubject + '\n'
-        message = header + '\n' + emailMessage + '\n' + '\n' + info
-        # Send the email and close the connection
-        smtpserver.sendmail(emailUser, emailTo, message)
-        smtpserver.close()                
-# End of logging function    
+# Start of set logging function
+def setLogging(logFile):
+    # Create a logger
+    logger = logging.getLogger(os.path.basename(__file__))
+    logger.setLevel(logging.DEBUG)
+    # Setup log message handler
+    logMessage = logging.FileHandler(logFile)
+    # Setup the log formatting
+    logFormat = logging.Formatter("%(asctime)s: %(levelname)s - %(message)s", "%d/%m/%Y - %H:%M:%S")
+    # Add formatter to log message handler
+    logMessage.setFormatter(logFormat)
+    # Add log message handler to logger
+    logger.addHandler(logMessage) 
+
+    return logger, logMessage               
+# End of set logging function
+
+
+# Start of send email function
+def sendEmail(message):
+    # Send an email
+    arcpy.AddMessage("Sending email...")
+    # Server and port information
+    smtpServer = smtplib.SMTP("smtp.gmail.com",587) 
+    smtpServer.ehlo()
+    smtpServer.starttls() 
+    smtpServer.ehlo
+    # Login with sender email address and password
+    smtpServer.login(emailUser, emailPassword)
+    # Email content
+    header = 'To:' + emailTo + '\n' + 'From: ' + emailUser + '\n' + 'Subject:' + emailSubject + '\n'
+    body = header + '\n' + emailMessage + '\n' + '\n' + message
+    # Send the email and close the connection
+    smtpServer.sendmail(emailUser, emailTo, body)    
+# End of send email function
+
 
 # This test allows the script to be used from the operating
 # system command prompt (stand-alone), in a Python IDE, 
@@ -462,5 +550,18 @@ if __name__ == '__main__':
     # Arguments are optional - If running from ArcGIS Desktop tool, parameters will be loaded into *argv
     argv = tuple(arcpy.GetParameterAsText(i)
         for i in range(arcpy.GetArgumentCount()))
+    # Logging
+    if (enableLogging == "true"):
+        # Setup logging
+        logger, logMessage = setLogging(logFile)
+        # Log start of process
+        logger.info("Process started.")
+    # Setup the use of a proxy for requests
+    if (enableProxy == "true"):
+        # Setup the proxy
+        proxy = urllib2.ProxyHandler({requestProtocol : proxyURL})
+        openURL = urllib2.build_opener(proxy)
+        # Install the proxy
+        urllib2.install_opener(openURL)
     mainFunction(*argv)
     
