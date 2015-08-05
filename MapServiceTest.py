@@ -17,6 +17,7 @@ import smtplib
 import arcpy
 import string
 import urllib2
+import time
 
 # Enable data to be overwritten
 arcpy.env.overwriteOutput = True
@@ -36,7 +37,7 @@ proxyURL = ""
 output = None
 
 # Start of main function
-def mainFunction(mapService,boundingBox,scales): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
+def mainFunction(mapService,boundingBox,scales,csvFile): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
     try:
         # --------------------------------------- Start of code --------------------------------------- #
         # Seperate out XY coordinates
@@ -52,6 +53,11 @@ def mainFunction(mapService,boundingBox,scales): # Get parameters from ArcGIS De
         ImageWidth = 768
         format = "png"
 
+        # Open text file and write header line       
+        summaryFile = open(csvFile, "w")        
+        header = "Scale,Draw Time (Seconds)\n"
+        summaryFile.write(header)
+
         # For each scale specified
         for scale in scales:
             # Setup the query
@@ -62,9 +68,39 @@ def mainFunction(mapService,boundingBox,scales): # Get parameters from ArcGIS De
             urlQuery = urlQuery + "&bbox=" + str(boundingBox[0]) + "," + str(boundingBox[1]) + "," + str(boundingBox[2]) + "," + str(boundingBox[3])
 
             # Make the query to download the image
-            urllib2.urlopen(urlQuery).read()
-            arcpy.AddMessage(urlQuery)
+            try:
+                startTime = time.time()
+                response = urllib2.urlopen(urlQuery).read()
+            except urllib2.URLError, error:
+                arcpy.AddError(error)
+                # Logging
+                if (enableLogging == "true"):
+                    logger.error(error)                    
+                sys.exit()
 
+            endTime = time.time()
+            downloadTime = round(endTime - startTime,4)
+            arcpy.AddMessage("1:" + str(scale) + " draw time - " + str(downloadTime))
+
+            # Construct and write the comma-separated line         
+            serviceLine = str(scale) + "," + str(downloadTime) + "\n"
+            summaryFile.write(serviceLine)
+
+            
+            # Set the file path
+            file = os.path.join(arcpy.env.scratchFolder, "MapService_" + str(scale) + "." + str(format))
+            
+            # Open the file for writing
+            responseImage = open(file, "wb")
+
+            # Read from request while writing to file
+            responseImage.write(response)
+            responseImage.close()
+
+            arcpy.AddMessage("Downloaded image location - " + file)
+            
+        summaryFile.close()
+            
         # --------------------------------------- End of code --------------------------------------- #  
             
         # If called from gp tool return the arcpy parameter   
