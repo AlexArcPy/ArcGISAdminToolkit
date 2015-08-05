@@ -142,7 +142,6 @@ def mainFunction(agsServerSite,username,password,service): # Get parameters from
                     logger.error(str(errorServices) + " services have errors")
                     for error in errors:
                         logger.error(error)
-                    sys.exit()
                 # Email
                 if (sendErrorEmail == "true"):
                     errorMessage = str(stoppedServices) + " services are stopped" + "\n"

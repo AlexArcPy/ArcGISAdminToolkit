@@ -34,6 +34,9 @@ Starts or stops GIS services. Can start/stop all GIS services for an ArcGIS serv
 #### ArcGIS Server Stats
 Generates a CSV file with statistics around how often services are being used and how well they are performing in the ArcGIS server site.
 
+#### MAp Service Test
+Runs a configurable query against a map service and produces a report on it's performance.
+
 
 ## Features
 
