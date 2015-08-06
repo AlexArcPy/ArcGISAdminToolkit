@@ -38,7 +38,7 @@ proxyURL = ""
 output = None
 
 # Start of main function
-def mainFunction(mapService,boundingBox,cached,scales,imageFormat,csvFile): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
+def mainFunction(mapService,boundingBox,scales,imageFormat,csvFile): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
     try:
         # --------------------------------------- Start of code --------------------------------------- #
         # Set constant variables
@@ -55,101 +55,109 @@ def mainFunction(mapService,boundingBox,cached,scales,imageFormat,csvFile): # Ge
         if (imageFormat == "JPG"):
             imageFormat = "jpg"            
             
-        # Cached map service
-        if (cached == "true"):
-            # Setup the query
-            urlQuery = mapService + "?f=json";
-                
-            # Make the query to the map service
-            try:
-                response = urllib2.urlopen(urlQuery).read()
-            except urllib2.URLError, error:
-                arcpy.AddError(error)
-                # Logging
-                if (enableLogging == "true"):
-                    logger.error(error)                    
-                sys.exit()
+        # Setup the query
+        urlQuery = mapService + "?f=json";
+            
+        # Make the query to the map service
+        try:
+            response = urllib2.urlopen(urlQuery).read()
+        except urllib2.URLError, error:
+            arcpy.AddError(error)
+            # Logging
+            if (enableLogging == "true"):
+                logger.error(error)                    
+            sys.exit()
 
-            dataObject = json.loads(response)
-            scales = ""
+        dataObject = json.loads(response)
+     
+        # If the map service is cached
+        if "tileInfo" in dataObject:
+            arcpy.AddMessage("Map Service is cached...")
 
             # Open text file and write header line       
             summaryFile = open(csvFile, "w")        
             header = "Scale,Number of Tiles,Draw Time (Seconds)\n"
             summaryFile.write(header)
-         
-            # If the map service is cached
-            if "tileInfo" in dataObject:               
-                # Get the tile info
-                tileInfo = dataObject['tileInfo']
-                tileHeight = tileInfo['rows']
-                tileWidth = tileInfo['cols']
-                tileOriginX = tileInfo['origin']['x']
-                tileOriginY = tileInfo['origin']['y']
-                dpi = tileInfo['dpi']
+        
+            # Get the tile info
+            tileInfo = dataObject['tileInfo']
+            tileHeight = tileInfo['rows']
+            tileWidth = tileInfo['cols']
+            tileOriginX = tileInfo['origin']['x']
+            tileOriginY = tileInfo['origin']['y']
+            dpi = tileInfo['dpi']
 
-                # Get the centre point of the bounding box
-                searchPointX = (float(boundingBox[0]) + float(boundingBox[2]))/2
-                searchPointY = (float(boundingBox[1]) + float(boundingBox[3]))/2
+            # Get the centre point of the bounding box
+            searchPointX = (float(boundingBox[0]) + float(boundingBox[2]))/2
+            searchPointY = (float(boundingBox[1]) + float(boundingBox[3]))/2
+            
+            # Iterate through the levels
+            for level in tileInfo['lods']:
+                thisLevel = level['level']
+                thisScale = level['scale']
+                thisResolution = level['resolution']
                 
-                # Iterate through the levels
-                for level in tileInfo['lods']:
-                    thisLevel = level['level']
-                    thisScale = level['scale']
-                    thisResolution = level['resolution']
-                    
-                    # Dividing image width by DPI to get it in inches
-                    imgWidthInInch = ImageWidth / dpi;
-                    imgHeightInInch = ImageHeight / dpi;
+                # Dividing image width by DPI to get it in inches
+                imgWidthInInch = ImageWidth / dpi;
+                imgHeightInInch = ImageHeight / dpi;
 
-                    # Converting inch to metre (assume the map is in meter)
-                    imgWidthInMapUnit = imgWidthInInch * 0.0254;
-                    imgHeightInMapUnit = imgHeightInInch * 0.0254;
+                # Converting inch to metre (assume the map is in meter)
+                imgWidthInMapUnit = imgWidthInInch * 0.0254;
+                imgHeightInMapUnit = imgHeightInInch * 0.0254;
 
-                    # Calculating half of maps height & width at the specific scale
-                    halfX = (imgWidthInMapUnit * thisScale) / 2;
-                    halfY = (imgHeightInMapUnit * thisScale) / 2;
+                # Calculating half of maps height & width at the specific scale
+                halfX = (imgWidthInMapUnit * thisScale) / 2;
+                halfY = (imgHeightInMapUnit * thisScale) / 2;
 
-                    # Setup the extent
-                    XMin = searchPointX - halfX
-                    XMax = searchPointX + halfX
-                    YMin = searchPointY - halfY
-                    YMax = searchPointY + halfY
+                # Setup the extent
+                XMin = searchPointX - halfX
+                XMax = searchPointX + halfX
+                YMin = searchPointY - halfY
+                YMax = searchPointY + halfY
 
-                    # Get the tile info - Top left
-                    topLeftPointX = XMin
-                    topLeftPointY = YMax
-                    # Get the tile info - Bottom right
-                    bottomRightPointX = XMax
-                    bottomRightPointY = YMin
-                    
-                    # Find the tile row and column - Top left
-                    topLeftTileRow = int((float(tileOriginY) - float(topLeftPointY)) / (float(thisResolution) * float(tileHeight)))        
-                    topLeftTileColumn = int((float(topLeftPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth)))
-                    # Find the tile row and column - Bottom right
-                    bottomRightTileRow = int((float(tileOriginY) - float(bottomRightPointY)) / (float(thisResolution) * float(tileHeight)))        
-                    bottomRightTileColumn = int((float(bottomRightPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth)))
+                # Get the tile info - Top left
+                topLeftPointX = XMin
+                topLeftPointY = YMax
+                # Get the tile info - Bottom right
+                bottomRightPointX = XMax
+                bottomRightPointY = YMin
+                
+                # Find the tile row and column - Top left
+                topLeftTileRow = int((float(tileOriginY) - float(topLeftPointY)) / (float(thisResolution) * float(tileHeight)))        
+                topLeftTileColumn = int((float(topLeftPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth)))
+                # Find the tile row and column - Bottom right
+                bottomRightTileRow = int((float(tileOriginY) - float(bottomRightPointY)) / (float(thisResolution) * float(tileHeight)))        
+                bottomRightTileColumn = int((float(bottomRightPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth)))
 
-                    # Return all the tiles in between
-                    tileCount = 0
-                    totalDownloadTime = 0
-                    column = topLeftTileColumn
-                    while (column < bottomRightTileColumn):
-                        row = topLeftTileRow
-                        while (row < bottomRightTileRow):
-                            urlQuery = mapService + "/tile/" + str(thisLevel) + "/" + str(row) + "/" + str(column);
+                # Return all the tiles in between
+                tileCount = 0
+                totalDownloadTime = 0
+                column = topLeftTileColumn
+                while (column < bottomRightTileColumn):
+                    row = topLeftTileRow
+                    while (row < bottomRightTileRow):
+                        urlQuery = mapService + "/tile/" + str(thisLevel) + "/" + str(row) + "/" + str(column);
 
-                            # Make the query to download the image
-                            try:
-                                startTime = time.time()
-                                response = urllib2.urlopen(urlQuery).read()
-                            except urllib2.URLError, error:
+                        # Make the query to download the image
+                        try:
+                            missingTile = False
+                            startTime = time.time()
+                            response = urllib2.urlopen(urlQuery).read()                              
+                        except urllib2.URLError, error:
+                            # If no tile found
+                            if (error.code == 404):
+                                missingTile = True
+                            # If any other error
+                            else:
                                 arcpy.AddError(error)
                                 # Logging
                                 if (enableLogging == "true"):
-                                    logger.error(error)                    
+                                    logger.error(error)
+                                summaryFile.close()
                                 sys.exit()
-
+                                
+                        # If a tile is found
+                        if (missingTile == False):
                             endTime = time.time()
                             downloadTime = endTime - startTime                            
                             totalDownloadTime = round(totalDownloadTime + downloadTime,4)
@@ -165,18 +173,20 @@ def mainFunction(mapService,boundingBox,cached,scales,imageFormat,csvFile): # Ge
                             responseImage.close()
                 
                             tileCount = tileCount + 1
-                            row = row + 1
-                        column = column + 1
+                        row = row + 1
+                    column = column + 1
 
-                    arcpy.AddMessage("1:" + str(thisScale) + " draw time - " + str(totalDownloadTime))
-                    
-                    # Construct and write the comma-separated line      
-                    serviceLine = str(thisScale) + "," + str(tileCount) + "," + str(totalDownloadTime) + "\n"
-                    summaryFile.write(serviceLine)
-
+                arcpy.AddMessage("1:" + str(thisScale) + " draw time - " + str(totalDownloadTime) + "...")
+                
+                # Construct and write the comma-separated line      
+                serviceLine = str(thisScale) + "," + str(tileCount) + "," + str(totalDownloadTime) + "\n"
+                summaryFile.write(serviceLine)
+                
             summaryFile.close()                                       
         # Dynamic map service
         else:
+            arcpy.AddMessage("Map Service is dynamic...")
+            
             # If a string, convert to array for scales
             if isinstance(scales, basestring):
                 scales = string.split(scales, ";")
@@ -203,12 +213,13 @@ def mainFunction(mapService,boundingBox,cached,scales,imageFormat,csvFile): # Ge
                     arcpy.AddError(error)
                     # Logging
                     if (enableLogging == "true"):
-                        logger.error(error)                    
+                        logger.error(error)
+                    summaryFile.close()                        
                     sys.exit()
 
                 endTime = time.time()
                 downloadTime = round(endTime - startTime,4)
-                arcpy.AddMessage("1:" + str(scale) + " draw time - " + str(downloadTime))
+                arcpy.AddMessage("1:" + str(scale) + " draw time - " + str(downloadTime) + "...")
 
                 # Construct and write the comma-separated line         
                 serviceLine = str(scale) + "," + str(downloadTime) + "\n"
