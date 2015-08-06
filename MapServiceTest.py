@@ -3,7 +3,7 @@
 # Purpose:    Runs a configurable query against a map service and produces a report on it's performance.
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    05/08/2015
-# Last Updated:    05/08/2015
+# Last Updated:    06/08/2015
 # Copyright:   (c) Eagle Technology
 # ArcGIS Version:   10.3+
 # Python Version:   2.7
@@ -18,6 +18,7 @@ import arcpy
 import string
 import urllib2
 import time
+import json
 
 # Enable data to be overwritten
 arcpy.env.overwriteOutput = True
@@ -37,39 +38,30 @@ proxyURL = ""
 output = None
 
 # Start of main function
-def mainFunction(mapService,boundingBox,scales,csvFile): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
+def mainFunction(mapService,boundingBox,cached,scales,imageFormat,csvFile): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
     try:
         # --------------------------------------- Start of code --------------------------------------- #
-        # Seperate out XY coordinates
-        boundingBox = boundingBox.split(" ")
-
-        # If a string, convert to array for scales
-        if isinstance(scales, basestring):
-            scales = string.split(scales, ";")
-
         # Set constant variables
         dpi = 96
         ImageHeight = 1280
         ImageWidth = 768
-        format = "png"
 
-        # Open text file and write header line       
-        summaryFile = open(csvFile, "w")        
-        header = "Scale,Draw Time (Seconds)\n"
-        summaryFile.write(header)
+        # Seperate out XY coordinates
+        boundingBox = boundingBox.split(" ")
 
-        # For each scale specified
-        for scale in scales:
+        # Get the image format
+        if (imageFormat == "PNG"):
+            imageFormat = "png"
+        if (imageFormat == "JPG"):
+            imageFormat = "jpg"            
+            
+        # Cached map service
+        if (cached == "true"):
             # Setup the query
-            urlQuery = mapService + "/export?f=image&dpi=" + str(dpi);
-            urlQuery = urlQuery + "&format=" + str(format)            
-            urlQuery = urlQuery + "&size=" + str(ImageHeight) + "," + str(ImageWidth)
-            urlQuery = urlQuery + "&mapScale=" + str(scale)
-            urlQuery = urlQuery + "&bbox=" + str(boundingBox[0]) + "," + str(boundingBox[1]) + "," + str(boundingBox[2]) + "," + str(boundingBox[3])
-
-            # Make the query to download the image
+            urlQuery = mapService + "?f=json";
+                
+            # Make the query to the map service
             try:
-                startTime = time.time()
                 response = urllib2.urlopen(urlQuery).read()
             except urllib2.URLError, error:
                 arcpy.AddError(error)
@@ -78,29 +70,164 @@ def mainFunction(mapService,boundingBox,scales,csvFile): # Get parameters from A
                     logger.error(error)                    
                 sys.exit()
 
-            endTime = time.time()
-            downloadTime = round(endTime - startTime,4)
-            arcpy.AddMessage("1:" + str(scale) + " draw time - " + str(downloadTime))
+            dataObject = json.loads(response)
+            scales = ""
 
-            # Construct and write the comma-separated line         
-            serviceLine = str(scale) + "," + str(downloadTime) + "\n"
-            summaryFile.write(serviceLine)
+            # Open text file and write header line       
+            summaryFile = open(csvFile, "w")        
+            header = "Scale,Number of Tiles,Draw Time (Seconds)\n"
+            summaryFile.write(header)
+         
+            # If the map service is cached
+            if "tileInfo" in dataObject:               
+                # Get the tile info
+                tileInfo = dataObject['tileInfo']
+                tileHeight = tileInfo['rows']
+                tileWidth = tileInfo['cols']
+                tileOriginX = tileInfo['origin']['x']
+                tileOriginY = tileInfo['origin']['y']
+                dpi = tileInfo['dpi']
 
-            
-            # Set the file path
-            file = os.path.join(arcpy.env.scratchFolder, "MapService_" + str(scale) + "." + str(format))
-            
-            # Open the file for writing
-            responseImage = open(file, "wb")
+                # Get the centre point of the bounding box
+                searchPointX = (float(boundingBox[0]) + float(boundingBox[2]))/2
+                searchPointY = (float(boundingBox[1]) + float(boundingBox[3]))/2
+                
+                # Iterate through the levels
+                for level in tileInfo['lods']:
+                    thisLevel = level['level']
+                    thisScale = level['scale']
+                    thisResolution = level['resolution']
+                    
+                    # Dividing image width by DPI to get it in inches
+                    imgWidthInInch = ImageWidth / dpi;
+                    imgHeightInInch = ImageHeight / dpi;
 
-            # Read from request while writing to file
-            responseImage.write(response)
-            responseImage.close()
+                    # Converting inch to metre (assume the map is in meter)
+                    imgWidthInMapUnit = imgWidthInInch * 0.0254;
+                    imgHeightInMapUnit = imgHeightInInch * 0.0254;
 
-            arcpy.AddMessage("Downloaded image location - " + file)
+                    # Calculating half of maps height & width at the specific scale
+                    halfX = (imgWidthInMapUnit * thisScale) / 2;
+                    halfY = (imgHeightInMapUnit * thisScale) / 2;
+
+                    # Setup the extent
+                    XMin = searchPointX - halfX
+                    XMax = searchPointX + halfX
+                    YMin = searchPointY - halfY
+                    YMax = searchPointY + halfY
+
+                    # Get the tile info - Top left
+                    topLeftPointX = XMin
+                    topLeftPointY = YMax
+                    # Get the tile info - Bottom right
+                    bottomRightPointX = XMax
+                    bottomRightPointY = YMin
+                    
+                    # Find the tile row and column - Top left
+                    topLeftTileRow = int((float(tileOriginY) - float(topLeftPointY)) / (float(thisResolution) * float(tileHeight)))        
+                    topLeftTileColumn = int((float(topLeftPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth)))
+                    # Find the tile row and column - Bottom right
+                    bottomRightTileRow = int((float(tileOriginY) - float(bottomRightPointY)) / (float(thisResolution) * float(tileHeight)))        
+                    bottomRightTileColumn = int((float(bottomRightPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth)))
+
+                    # Return all the tiles in between
+                    tileCount = 0
+                    totalDownloadTime = 0
+                    column = topLeftTileColumn
+                    while (column < bottomRightTileColumn):
+                        row = topLeftTileRow
+                        while (row < bottomRightTileRow):
+                            urlQuery = mapService + "/tile/" + str(thisLevel) + "/" + str(row) + "/" + str(column);
+
+                            # Make the query to download the image
+                            try:
+                                startTime = time.time()
+                                response = urllib2.urlopen(urlQuery).read()
+                            except urllib2.URLError, error:
+                                arcpy.AddError(error)
+                                # Logging
+                                if (enableLogging == "true"):
+                                    logger.error(error)                    
+                                sys.exit()
+
+                            endTime = time.time()
+                            downloadTime = endTime - startTime                            
+                            totalDownloadTime = round(totalDownloadTime + downloadTime,4)
+
+                            # Set the file path
+                            file = os.path.join(arcpy.env.scratchFolder, "MapService_" + str(thisScale) + "_" + str(row) + "_" + str(column) + "." + str(imageFormat))
+
+                            # Open the file for writing
+                            responseImage = open(file, "wb")
+
+                            # Read from request while writing to file
+                            responseImage.write(response)
+                            responseImage.close()
+                
+                            tileCount = tileCount + 1
+                            row = row + 1
+                        column = column + 1
+
+                    arcpy.AddMessage("1:" + str(thisScale) + " draw time - " + str(totalDownloadTime))
+                    
+                    # Construct and write the comma-separated line      
+                    serviceLine = str(thisScale) + "," + str(tileCount) + "," + str(totalDownloadTime) + "\n"
+                    summaryFile.write(serviceLine)
+
+            summaryFile.close()                                       
+        # Dynamic map service
+        else:
+            # If a string, convert to array for scales
+            if isinstance(scales, basestring):
+                scales = string.split(scales, ";")
             
-        summaryFile.close()
+            # Open text file and write header line       
+            summaryFile = open(csvFile, "w")        
+            header = "Scale,Draw Time (Seconds)\n"
+            summaryFile.write(header)
+
+            # For each scale specified
+            for scale in scales:
+                # Setup the query
+                urlQuery = mapService + "/export?f=image&dpi=" + str(dpi);
+                urlQuery = urlQuery + "&format=" + str(imageFormat)            
+                urlQuery = urlQuery + "&size=" + str(ImageHeight) + "," + str(ImageWidth)
+                urlQuery = urlQuery + "&mapScale=" + str(scale)
+                urlQuery = urlQuery + "&bbox=" + str(boundingBox[0]) + "," + str(boundingBox[1]) + "," + str(boundingBox[2]) + "," + str(boundingBox[3])
+
+                # Make the query to download the image
+                try:
+                    startTime = time.time()
+                    response = urllib2.urlopen(urlQuery).read()
+                except urllib2.URLError, error:
+                    arcpy.AddError(error)
+                    # Logging
+                    if (enableLogging == "true"):
+                        logger.error(error)                    
+                    sys.exit()
+
+                endTime = time.time()
+                downloadTime = round(endTime - startTime,4)
+                arcpy.AddMessage("1:" + str(scale) + " draw time - " + str(downloadTime))
+
+                # Construct and write the comma-separated line         
+                serviceLine = str(scale) + "," + str(downloadTime) + "\n"
+                summaryFile.write(serviceLine)
+                
+                # Set the file path
+                file = os.path.join(arcpy.env.scratchFolder, "MapService_" + str(scale) + "." + str(imageFormat))
+                
+                # Open the file for writing
+                responseImage = open(file, "wb")
+
+                # Read from request while writing to file
+                responseImage.write(response)
+                responseImage.close()
             
+            summaryFile.close()
+
+        arcpy.AddMessage("Downloaded images location - " + arcpy.env.scratchFolder)
+                
         # --------------------------------------- End of code --------------------------------------- #  
             
         # If called from gp tool return the arcpy parameter   
