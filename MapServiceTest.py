@@ -160,9 +160,9 @@ def mainFunction(mapService,boundingBox,scales,imageFormat,numberQueries,csvFile
                     arcpy.AddMessage("1:" + str(thisScale) + " draw time - " + str(totalDownloadTime) + "...")
 
                     # Add results to array
-                    for eachScaleData in scaleData:
+                    for eachScaleData in scaleData:             
                         # If scale is already in array
-                        if (thisScale == eachScaleData[0]):
+                        if (str(thisScale) == str(eachScaleData[0])):
                             # Add results to existing array value
                             eachScaleData[2] = float(eachScaleData[2]) + float(totalDownloadTime)
                             
@@ -203,7 +203,7 @@ def mainFunction(mapService,boundingBox,scales,imageFormat,numberQueries,csvFile
                     # Add results to array
                     for eachScaleData in scaleData:
                         # If scale is already in array
-                        if (scale == eachScaleData[0]):
+                        if (str(scale) == str(eachScaleData[0])):
                             # Add results to existing array value
                             eachScaleData[1] = float(eachScaleData[1]) + float(downloadTime)
 
