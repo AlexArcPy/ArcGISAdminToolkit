@@ -29,7 +29,7 @@ arcpy.env.overwriteOutput = True
 
 # Set variables
 enableLogging = "false" # Use logger.info("Example..."), logger.warning("Example..."), logger.error("Example...")
-logFile = os.path.join(os.path.dirname(__file__), "Logs\CacheMapService.log") # os.path.join(os.path.dirname(__file__), "Example.log")
+logFile = "" # os.path.join(os.path.dirname(__file__), "Example.log")
 sendErrorEmail = "false"
 emailTo = ""
 emailUser = ""

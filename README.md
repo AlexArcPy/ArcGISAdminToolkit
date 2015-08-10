@@ -14,7 +14,7 @@ Checks ArcGIS server service or folder for any permission changes.
 #### Action Windows Service
 Restarts the windows service specified.
 	- "C:\Temp\scsList.txt" to get the service names.
-	- Needs to be run as administrator
+	- Needs to be run as administrator and can only be run from command prompt.
 
 #### Import ArcGIS Server Users
 Imports a list of users provided in a CSV file to ArcGIS server, assigning to roles and setting default password.
@@ -34,8 +34,8 @@ Starts or stops GIS services. Can start/stop all GIS services for an ArcGIS serv
 #### ArcGIS Server Stats
 Generates a CSV file with statistics around how often services are being used and how well they are performing in the ArcGIS server site.
 
-#### MAp Service Test
-Runs a configurable query against a map service and produces a report on it's performance.
+#### Map Service Test
+Runs a configurable query against a map service and produces a report on draw times at specified scales.
 
 
 ## Features
@@ -45,26 +45,18 @@ Runs a configurable query against a map service and produces a report on it's pe
 * Setup map caching as a scheduled task.
 * Monitor ArcGIS Server site.
 * Backup and restore site configurations.
+* Start or stop GIS services
+* Get ArcGIS server performance statistics.
 
 
 ## Requirements
 
-* ArcGIS for Desktop 10.1+ 
-	* Geodatabase - Update & Compress
-	* Cache Map Service
-	* ArcGIS Server Availability
-
-* ArcGIS for Server 10.1+
-	* Geodatabase - Update & Compress
-	* Cache Map Service
-	* ArcGIS Server Availability
-
-* ArcGIS for Server 10.2+
-	* Backup and Restore ArcGIS Server Site
+* Python for ArcGIS installed. Version required is specified in the comments section of each individual script.
 
 
 ## Installation Instructions
 
+* Tools can be run from the operating system command prompt (stand-alone), in a Python IDE or as a geoprocessing script tool.
 * Setup a script to run as a scheduled task
 	* Fork and then clone the repository or download the .zip file. 
 	* Edit the [batch file](/Examples) to be automated and change the parameters to suit your environment.
@@ -93,7 +85,7 @@ Anyone and everyone is welcome to contribute.
 
 
 ## Licensing
-Copyright 2014 - Shaun Weston
+Copyright 2015 - Shaun Weston
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

@@ -226,40 +226,6 @@ def getToken(username, password, serverName, serverPort):
 # End of get token function
 
 
-# Start of HTTP POST request to the server function
-def postToServer(serverName, serverPort, protocol, url, params):
-    # If on standard port
-    if (serverPort == -1 and protocol == 'http'):
-        serverPort = 80
-
-    # If on secure port
-    if (serverPort == -1 and protocol == 'https'):
-        serverPort = 443
-        
-    if (protocol == 'http'):
-        httpConn = httplib.HTTPConnection(serverName, int(serverPort))
-
-    if (protocol == 'https'):
-        httpConn = httplib.HTTPSConnection(serverName, int(serverPort))
-        
-    headers = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain",'referer':'backuputility','referrer':'backuputility'}
-     
-    # URL encode the resource URL
-    url = urllib.quote(url.encode('utf-8'))
-
-    # Build the connection to add the roles to the server
-    httpConn.request("POST", url, params, headers) 
-
-    response = httpConn.getresponse()
-    data = response.read()
-
-    httpConn.close()
-
-    # Return response
-    return (response, data)
-# End of HTTP POST request to the server function
-
-
 # Start of split URL function 
 def splitSiteURL(siteURL):
     try:
@@ -301,24 +267,6 @@ def splitSiteURL(siteURL):
             sys.exit()
         return None, None, None, None
 # End of split URL function
-
-
-# Start of status check JSON object function
-def assertJsonSuccess(data):
-    obj = json.loads(data)
-    if 'status' in obj and obj['status'] == "error":
-        if ('messages' in obj):
-            errMsgs = obj['messages']
-            for errMsg in errMsgs:
-                arcpy.AddError(errMsg)
-                # Logging
-                if (enableLogging == "true"):      
-                    logger.error(errMsg)
-            sys.exit()
-        return False
-    else:
-        return True
-# End of status check JSON object function
 
 
 # Start of set logging function

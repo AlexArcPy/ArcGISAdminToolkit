@@ -1,9 +1,9 @@
 #-------------------------------------------------------------
 # Name:       Map Service Test
-# Purpose:    Runs a configurable query against a map service and produces a report on it's performance.
+# Purpose:    Runs a configurable query against a map service and produces a report on draw times at specified scales.
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    05/08/2015
-# Last Updated:    07/08/2015
+# Last Updated:    10/08/2015
 # Copyright:   (c) Eagle Technology
 # ArcGIS Version:   10.3+
 # Python Version:   2.7
@@ -16,9 +16,11 @@ import logging
 import smtplib
 import arcpy
 import string
+import urllib
 import urllib2
 import time
 import json
+from urlparse import urlparse
 
 # Enable data to be overwritten
 arcpy.env.overwriteOutput = True
@@ -38,7 +40,7 @@ proxyURL = ""
 output = None
 
 # Start of main function
-def mainFunction(mapService,boundingBox,scales,imageFormat,numberQueries,csvFile): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
+def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,numberQueries,csvFile): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
     try:
         # --------------------------------------- Start of code --------------------------------------- #
         # Set constant variables
@@ -58,14 +60,35 @@ def mainFunction(mapService,boundingBox,scales,imageFormat,numberQueries,csvFile
             imageFormat = "png"
         if (imageFormat == "JPG"):
             imageFormat = "jpg"            
-            
-        # Setup the query
-        query = mapService + "?f=json";
-            
+
+        # Get the server name and port
+        parse_object = urlparse(mapService)
+        protocol = parse_object.scheme
+        serverNameAndPort = parse_object.netloc.split(":")
+        serverName = serverNameAndPort[0]
+        if (len(serverNameAndPort) > 1):
+            serverPort = serverNameAndPort[1]
+        else:
+            serverPort = 80
+            if (protocol.lower() == "https"):
+                serverPort = 443
+        
+        # Get token if needed
+        token = ""
+        if (username and password):
+            token = getToken(username, password, serverName, serverPort)
+
+        # If token received
+        if (token):
+            # Setup the query
+            query = mapService + "?f=json&token=" + token;
+        else:
+            # Setup the query
+            query = mapService + "?f=json";
+
         # Make the query to the map service
         response, downloadTime = urlQuery(query)
         dataObject = json.loads(response)
-     
         # If the map service is cached
         if "tileInfo" in dataObject:
             arcpy.AddMessage("Map Service is cached...")
@@ -135,6 +158,11 @@ def mainFunction(mapService,boundingBox,scales,imageFormat,numberQueries,csvFile
                         while (row < bottomRightTileRow):
                             query = mapService + "/tile/" + str(thisLevel) + "/" + str(row) + "/" + str(column);
 
+                            # If token received
+                            if (token):
+                                # Add token to query
+                                query = query + "?token=" + token
+                        
                             # Make the query to the map service
                             response, downloadTime = urlQuery(query)
 
@@ -195,6 +223,11 @@ def mainFunction(mapService,boundingBox,scales,imageFormat,numberQueries,csvFile
                     query = query + "&mapScale=" + str(scale)
                     query = query + "&bbox=" + str(boundingBox[0]) + "," + str(boundingBox[1]) + "," + str(boundingBox[2]) + "," + str(boundingBox[3])
 
+                    # If token received
+                    if (token):
+                        # Add token to query
+                        query = query + "&token=" + token
+            
                     # Make the query to the map service
                     response, downloadTime = urlQuery(query)                 
 
@@ -327,12 +360,59 @@ def urlQuery(query):
             if (enableLogging == "true"):
                 logger.error(error)
             sys.exit()
-    # Get the time for the request
-    endTime = time.time()
-    downloadTime = endTime - startTime                            
 
-    return response, downloadTime
+    # If there is an error in the response
+    if "error" in response:
+        arcpy.AddError("Error in the query response.")
+        arcpy.AddError(response)        
+        # Logging
+        if (enableLogging == "true"):     
+            logger.error("Error in the query response.")
+            logger.error(response)
+        sys.exit()  
+    else:
+        # Get the time for the request
+        endTime = time.time()
+        downloadTime = endTime - startTime                            
+
+        return response, downloadTime
 # End of url query function
+
+
+# Start of get token function
+def getToken(username, password, serverName, serverPort):
+    
+    query_dict = {'username':   username,
+                  'password':   password,
+                  'expiration': "60",
+                  'client':     'requestip'}
+    
+    query_string = urllib.urlencode(query_dict)
+    url = "http://{}:{}/arcgis/admin/generateToken?f=json".format(serverName, serverPort)
+   
+    try:
+        token = json.loads(urllib2.urlopen(url, query_string).read())
+        if "token" not in token or token == None:
+            arcpy.AddError("Failed to get token, return message from server:")
+            arcpy.AddError(token['messages'])            
+            # Logging
+            if (enableLogging == "true"):   
+                logger.error("Failed to get token, return message from server:")
+                logger.error(token['messages'])                
+            sys.exit()
+        else:
+            # Return the token to the function which called for it
+            return token['token']
+    
+    except urllib2.URLError, error:
+        arcpy.AddError("Could not connect to machine {} on port {}".format(serverName, serverPort))
+        arcpy.AddError(error)
+        # Logging
+        if (enableLogging == "true"):   
+            logger.error("Could not connect to machine {} on port {}".format(serverName, serverPort))
+            logger.error(error)         
+        sys.exit()
+# End of get token function
 
 
 # Start of set logging function
