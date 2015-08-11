@@ -3,7 +3,7 @@
 # Purpose:    Runs a configurable query against a map service and produces a report on draw times at specified scales.
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    05/08/2015
-# Last Updated:    10/08/2015
+# Last Updated:    11/08/2015
 # Copyright:   (c) Eagle Technology
 # ArcGIS Version:   10.3+
 # Python Version:   2.7
@@ -20,6 +20,7 @@ import urllib
 import urllib2
 import time
 import json
+import math
 from urlparse import urlparse
 
 # Enable data to be overwritten
@@ -45,8 +46,8 @@ def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,num
         # --------------------------------------- Start of code --------------------------------------- #
         # Set constant variables
         dpi = 96
-        ImageHeight = 1280
-        ImageWidth = 768
+        ImageWidth = 1280
+        ImageHeight = 768
         
         # GlobalVariables
         cachedMapService = False
@@ -103,8 +104,8 @@ def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,num
             dpi = tileInfo['dpi']
 
             # Get the centre point of the bounding box
-            searchPointX = (float(boundingBox[0]) + float(boundingBox[2]))/2
-            searchPointY = (float(boundingBox[1]) + float(boundingBox[3]))/2
+            searchPointX = float(boundingBox[0]) + ((float(boundingBox[2]) - float(boundingBox[0])) / 2);
+            searchPointY = float(boundingBox[1]) + ((float(boundingBox[3]) - float(boundingBox[1])) / 2);
 
             count = 0
             # Make the number of queries as specified
@@ -121,7 +122,7 @@ def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,num
                     imgWidthInInch = ImageWidth / dpi;
                     imgHeightInInch = ImageHeight / dpi;
 
-                    # Converting inch to metre (assume the map is in meter)
+                    # Converting inch to metre (assume the map is in metre)
                     imgWidthInMapUnit = imgWidthInInch * 0.0254;
                     imgHeightInMapUnit = imgHeightInInch * 0.0254;
 
@@ -143,21 +144,21 @@ def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,num
                     bottomRightPointY = YMin
                     
                     # Find the tile row and column - Top left
-                    topLeftTileRow = int((float(tileOriginY) - float(topLeftPointY)) / (float(thisResolution) * float(tileHeight)))        
-                    topLeftTileColumn = int((float(topLeftPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth)))
+                    topLeftTileColumn = int(math.floor((float(topLeftPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth))))                    
+                    topLeftTileRow = int(math.floor((float(tileOriginY) - float(topLeftPointY)) / (float(thisResolution) * float(tileHeight))))        
                     # Find the tile row and column - Bottom right
-                    bottomRightTileRow = int((float(tileOriginY) - float(bottomRightPointY)) / (float(thisResolution) * float(tileHeight)))        
-                    bottomRightTileColumn = int((float(bottomRightPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth)))
+                    bottomRightTileColumn = int(math.floor((float(bottomRightPointX) - float(tileOriginX)) / (float(thisResolution) * float(tileWidth))))                    
+                    bottomRightTileRow = int(math.floor((float(tileOriginY) - float(bottomRightPointY)) / (float(thisResolution) * float(tileHeight))))       
 
                     # Return all the tiles in between
                     tileCount = 0
+                    tileMissingCount = 0
                     totalDownloadTime = 0
                     column = topLeftTileColumn
                     while (column < bottomRightTileColumn):
                         row = topLeftTileRow
                         while (row < bottomRightTileRow):
                             query = mapService + "/tile/" + str(thisLevel) + "/" + str(row) + "/" + str(column);
-
                             # If token received
                             if (token):
                                 # Add token to query
@@ -182,11 +183,16 @@ def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,num
                                 responseImage.close()
                     
                                 tileCount = tileCount + 1
+                            # Missing tiles
+                            else:
+                                tileMissingCount = tileMissingCount + 1
                             row = row + 1
                         column = column + 1
 
+                    arcpy.AddMessage("Tiles found - " + str(tileCount) + "...")
+                    arcpy.AddMessage("Tiles missing - " + str(tileMissingCount) + "...")
                     arcpy.AddMessage("1:" + str(thisScale) + " draw time - " + str(totalDownloadTime) + "...")
-
+                    
                     # Add results to array
                     for eachScaleData in scaleData:             
                         # If scale is already in array
@@ -197,7 +203,7 @@ def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,num
                     # If on the first query
                     if (count == 0):
                         # Add results to array
-                        scaleData.append([str(thisScale), str(tileCount), str(totalDownloadTime)])
+                        scaleData.append([str(thisScale), str(tileCount), str(tileMissingCount), str(totalDownloadTime)])
 
                 count = count + 1
         # Dynamic map service
@@ -219,7 +225,7 @@ def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,num
                     # Setup the query
                     query = mapService + "/export?f=image&dpi=" + str(dpi);
                     query = query + "&format=" + str(imageFormat)            
-                    query = query + "&size=" + str(ImageHeight) + "," + str(ImageWidth)
+                    query = query + "&size=" + str(ImageWidth) + "," + str(ImageHeight)
                     query = query + "&mapScale=" + str(scale)
                     query = query + "&bbox=" + str(boundingBox[0]) + "," + str(boundingBox[1]) + "," + str(boundingBox[2]) + "," + str(boundingBox[3])
 
@@ -263,13 +269,14 @@ def mainFunction(mapService,username,password,boundingBox,scales,imageFormat,num
         summaryFile = open(csvFile, "w")         
                         
         if (cachedMapService == True):               
-            header = "Scale,Number of Tiles,Draw Time (Seconds)\n"
+            header = "Scale,Number of Tiles Found,Number of Tiles Missing,Draw Time (Seconds)\n"
             summaryFile.write(header)
             for eachScaleData in scaleData:
                 scale = eachScaleData[0]
                 tileCount = eachScaleData[1]
-                drawTime = eachScaleData[2]
-                serviceLine = str(scale) + "," + str(tileCount) + "," + str(round(float(drawTime)/float(numberQueries),4)) + "\n"          
+                tileMissingCount = eachScaleData[2]
+                drawTime = eachScaleData[3]
+                serviceLine = str(scale) + "," + str(tileCount) + "," + str(tileMissingCount) + "," + str(round(float(drawTime)/float(numberQueries),4)) + "\n"          
                 summaryFile.write(serviceLine)          
         else:
             header = "Scale,Draw Time (Seconds)\n"            
@@ -374,7 +381,6 @@ def urlQuery(query):
         # Get the time for the request
         endTime = time.time()
         downloadTime = endTime - startTime                            
-
         return response, downloadTime
 # End of url query function
 
