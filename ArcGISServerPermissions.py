@@ -12,6 +12,7 @@
 # Import modules and enable data to be overwritten
 import os
 import sys
+import logging
 import datetime
 import smtplib
 import httplib
@@ -37,14 +38,7 @@ output = None
 
 # Start of main function
 def mainFunction(agsServerSite,username,password,service,permissionExpecting): # Get parameters from ArcGIS Desktop tool by seperating by comma e.g. (var1 is 1st parameter,var2 is 2nd parameter,var3 is 3rd parameter)  
-    try:
-        # Logging
-        if (enableLogging == "true"):
-            # Setup logging
-            logger, logMessage = setLogging(logFile)
-            # Log start of process
-            logger.info("Process started.")
-            
+    try:   
         # --------------------------------------- Start of code --------------------------------------- #  
 
         # Get the server site details
@@ -98,7 +92,7 @@ def mainFunction(agsServerSite,username,password,service,permissionExpecting): #
                     logger.warning("No permissions set to the service or folder...")
                     
         # --------------------------------------- End of code --------------------------------------- #  
-            
+
         # If called from gp tool return the arcpy parameter   
         if __name__ == '__main__':
             # Return the output if there is any
@@ -125,7 +119,9 @@ def mainFunction(agsServerSite,username,password,service,permissionExpecting): #
         # Logging
         if (enableLogging == "true"):
             # Log error          
-            logger.error(errorMessage)                 
+            logger.error(errorMessage)
+            # Log end of process
+            logger.info("Process ended.")            
             # Remove file handler and close log file
             logging.FileHandler.close(logMessage)
             logger.removeHandler(logMessage)
@@ -145,7 +141,9 @@ def mainFunction(agsServerSite,username,password,service,permissionExpecting): #
         # Logging
         if (enableLogging == "true"):
             # Log error            
-            logger.error(errorMessage)               
+            logger.error(errorMessage)
+            # Log end of process
+            logger.info("Process ended.")            
             # Remove file handler and close log file
             logging.FileHandler.close(logMessage)
             logger.removeHandler(logMessage)
@@ -378,5 +376,18 @@ if __name__ == '__main__':
     # Arguments are optional - If running from ArcGIS Desktop tool, parameters will be loaded into *argv
     argv = tuple(arcpy.GetParameterAsText(i)
         for i in range(arcpy.GetArgumentCount()))
+    # Logging
+    if (enableLogging == "true"):
+        # Setup logging
+        logger, logMessage = setLogging(logFile)
+        # Log start of process
+        logger.info("Process started.")
+    # Setup the use of a proxy for requests
+    if (enableProxy == "true"):
+        # Setup the proxy
+        proxy = urllib2.ProxyHandler({requestProtocol : proxyURL})
+        openURL = urllib2.build_opener(proxy)
+        # Install the proxy
+        urllib2.install_opener(openURL)
     mainFunction(*argv)
     
