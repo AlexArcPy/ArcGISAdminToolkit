@@ -1,13 +1,12 @@
 #-------------------------------------------------------------
 # Name:       Action Windows Service
 # Purpose:    Restarts the windows service specified.
-#             - "C:\Temp\scsList.txt" to get the service names.
-#             - Needs to be run as administrator and can only be run from command prompt.
+#             - Needs to be run as administrator.
 # Author:     Shaun Weston (shaun_weston@eagle.co.nz)
 # Date Created:    29/05/2014
-# Last Updated:    10/08/2015
+# Last Updated:    14/08/2015
 # Copyright:   (c) Eagle Technology
-# ArcGIS Version:   NR
+# ArcGIS Version:   10.1+
 # Python Version:   2.7
 #--------------------------------
 

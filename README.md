@@ -13,8 +13,7 @@ Checks ArcGIS server service or folder for any permission changes.
 
 #### Action Windows Service
 Restarts the windows service specified.
-	- "C:\Temp\scsList.txt" to get the service names.
-	- Needs to be run as administrator and can only be run from command prompt.
+* Needs to be run as administrator.
 
 #### Import ArcGIS Server Users
 Imports a list of users provided in a CSV file to ArcGIS server, assigning to roles and setting default password.
@@ -36,6 +35,11 @@ Generates a CSV file with statistics around how often services are being used an
 
 #### Map Service Test
 Runs a configurable query against a map service and produces a report on draw times at specified scales.
+
+#### Map Service Monitor
+Checks a map service for instance usage and performance. This tool should be setup as an automated task on the server. 
+* Needs to be run as administrator. 
+* Need to install WMI python package.
 
 
 ## Features
